@@ -1,0 +1,280 @@
+---
+title: "Modeling and Prediction for Movies"
+author: "George Liu"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Overview
+In this project, we use multiple linear regression techniques to make predictions about movie popularity. The analysis will be conducted using a randomly sampled movie dataset including 651 movies produced and released before 2016. We'll first perform exploratory data analysis, then build the linear model and finally use the model to predict a new movie's IMDB rating.
+
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+The data set is comprised of randomly sampled movies produced before 2016. Therefore, the inference we make based on this random sample can be generalized to the full population - all movies made and released before 2016. However, since no random assignment is made, we won't be able to establish any causal links based on the data.
+
+
+* * *
+
+## Part 2: Research question
+
+The question that we are concerned of in this project is whether we can use the given dataset to build a linear regression model and correctly predict a new movie's popularity, i.e. whether the variables (non popularity related variables) given in the dataset is correlated with the response variable (popularity related variables). Here, we'll use the movie's IMDB rating as the proxy for popularity.   
+
+This is an interesting question to investigate as for film makers, a "secret recipe" means business success and for cinema-goers, a "movie popularity formula" can help them save time by determining whether a movie is worth seeing.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+First, let's see whether imdb rating and imdb number of votes are correlated.
+
+```{r}
+ggplot(data=movies, aes(x=imdb_num_votes, y=imdb_rating)) +
+  geom_point()
+```
+
+It appears that there is a weak positive correlation between the two variables. When number of votes increase, the rating tend to become higher as well. Next, let's check runtime:
+
+```{r}
+ggplot(data=movies, aes(x=runtime, y=imdb_rating)) +
+  geom_point()
+```
+
+It seems that there is not any clear correlation between runtime and imdb rating. Below, we check the relationship between imdb rating and a categorical variable.
+
+```{r}
+ggplot(data=movies, aes(x=top200_box, y=imdb_rating)) +
+  geom_boxplot()
+```
+
+The plot clearly shows a relationship between the variables - those movies on the top200 box list receive a higher rating on average compared with movies not on the list. To quantify, we calculate the average and median of both groups below to compare:
+
+```{r}
+movies %>%
+  select(imdb_rating, top200_box) %>%
+  group_by(top200_box) %>%
+  summarize(mean=mean(imdb_rating), median=median(imdb_rating))
+```
+
+Clearly, these summary stats support prior observations. 
+
+
+* * *
+
+## Part 4: Modeling
+
+Including the popularity variables, we have a total of 32 variables. The popularity related variables are:
+
+imdb rating, critics rating, critics score, audience rating and audience score.
+
+We'll use imdb rating as the response variable in this project since there are more numerical variables in the imdb part of the dataset, and therefore we may get more prediction power. As a result, we'll leave out the other popularity variables.
+
+For the explanatory variables, we'll leave out the following ones (followed by the reasoning):
+
+* Studio: How popular a movie is should not be explained by the studio making it, otherwise, popular ones will be popular forever.
+
+* Theatre and DVD release date: If movies released at certain time are guaranteed to be popular, all movies would go out at the same time!
+
+* Director and actor: For similiar reasons as above.
+
+* imdb url and rt url: These variables contain HTML links that are not useful in making predictions.
+
+The rest of the variables such as num of votes and whether the actor won Oscar before all might have something to do with the movie popularity, thus will be kept. The following code selects the needed variables:
+
+```{r}
+movies_select <- movies %>%
+  select(title_type:mpaa_rating, imdb_rating:imdb_num_votes, best_actor_win:top200_box)
+```
+
+Also, let's check the number of NA values in the dataframe:
+
+```{r}
+sapply(movies_select, function(x) sum(is.na(x)))
+```
+
+We'll impute the missing value with the mean runtime:
+
+```{r}
+movies_select$runtime[is.na(movies_select$runtime)] <- mean(movies_select$runtime, na.rm = T)
+```
+
+
+Next, we fit the linear regression model.
+
+```{r}
+fit <- lm(data=movies_select, imdb_rating~.)
+```
+
+Based on the full model, we can now do model selection using backwards elimination method with adjusted R^2 as the criterion. 
+
+First of all, the F-statistic shows a tiny p-value, we can say the model is overal significant. Also, we need to make sure collinearity is not a concern by checking the linear relationship between the numerical variables:
+
+```{r}
+ggplot(data=movies_select, aes(x=runtime, y=imdb_num_votes)) + 
+  geom_point()
+```
+
+So, these varialbes don't seem to be linearly related. Now let's start dropping each variable and record the new R-squared.
+
+Variable        | Adjusted R^2
+--------------- | ------------
+title type      |  0.3881
+genre           |  0.3143
+runtime         |  0.386
+mpaa rating     |  0.3737
+imdb num votes  |  0.2992
+best actor win  |  0.3955
+best actress win|  0.3955
+best dir win    |  0.3924
+top200 box      |  0.3955
+
+The original adjusted R^2 is 0.3946 and by dropping the variables best actor win,  best actress win or top200 box, we get the highest increase in adjusted R^2. We'll go with best actor win first and get a new model:
+
+```{r}
+fit <- lm(data=movies_select, imdb_rating~title_type+genre+runtime+mpaa_rating+imdb_num_votes+best_actress_win+best_dir_win+top200_box)
+```
+
+Next, we'll repeat the process:
+
+Variable        | Adjusted R^2
+--------------- | ------------
+title type      |  0.389
+genre           |  0.315
+runtime         |  0.3861
+mpaa rating     |  0.3746
+imdb num votes  |  0.3003
+best actress win|  0.3964
+best dir win    |  0.3932
+top200 box      |  0.3964
+
+best actress win gives us the highest increase in adjusted R^2, let's drop it and have the new model below:
+
+```{r}
+fit <- lm(data=movies_select, imdb_rating~title_type+genre+runtime+mpaa_rating+imdb_num_votes+best_dir_win+top200_box)
+```
+
+Again, we repeat the process:
+
+Variable        | Adjusted R^2
+--------------- | ------------
+title type      |  0.39
+genre           |  0.3149
+runtime         |  0.3866
+mpaa rating     |  0.3693
+imdb num votes  |  0.3011
+best dir win    |  0.3941
+top200 box      |  0.3973
+
+The new model is now:
+
+```{r}
+fit <- lm(data=movies_select, imdb_rating~title_type+genre+runtime+mpaa_rating+imdb_num_votes+best_dir_win)
+```
+
+Let's try one more round to see whether we could have higher adjusted R^2:
+
+Variable        | Adjusted R^2
+--------------- | ------------
+title type      |  0.3909
+genre           |  0.3159
+runtime         |  0.3875
+mpaa rating     |  0.3764
+imdb num votes  |  0.2949
+best dir win    |  0.3951
+
+Since the adjusted R^2 is not improving anymore, we now have the optimal model as below:
+
+```{r}
+summary(fit)
+```
+
+Below, we interpret the model intercept and slope:
+
+For a documentary that is of genre "Action & Adventure", with a MPAA rating of G, and the director never won an oscar, the runtime and imdb number of votes being zero, the model predicts the movie's imdb rating to be 6.443e+00.
+
+For the slope of the genre variable, all else held constant, compared with Action & Adventure, Animation movies' imdb ratings are -3.106e-01 lower on average...similiar for other levels and other variables. 
+
+Next, we do model diagnostics using plots:
+
+1. Linear relationships between x and y
+
+```{r}
+plot(fit$residuals ~ movies_select$runtime)
+plot(fit$residuals ~ movies_select$imdb_num_votes)
+```
+
+It seems like the residuals are randomly scattered around zero, thus the condiion is met.
+
+2. Nearly normal residuals
+
+```{r}
+hist(fit$residuals)
+qqnorm(fit$residuals)
+qqline(fit$residuals)
+```
+
+So, it does look like there is a significant skew in the histogram, also with the qqplot, we see a huge deviation from the mean. Therefore, this condition is not met.
+
+3. Constant variability of residuals
+
+```{r}
+plot(fit$residuals ~ fit$fitted.values)
+plot(abs(fit$residuals) ~ fit$fitted.values)
+```
+
+As we are seeing a fan shape here, this condition is not met either.
+
+4. Independence of residuals
+
+```{r}
+plot(fit$residuals)
+```
+
+There doesn't seem to be any time series pattern, thus this condition seems to be met.
+
+* * *
+
+## Part 5: Prediction
+
+Since two of the previous conditions for multiple linear regression model are not met, the model is not valid. However, for the sake of completeness, we'll complete the prediction using the model. Here, we'll pick the 2016 new movie Captain America and the data for this movie can be obtained from the IMDB site.
+
+```{r}
+captain_america <- data.frame(title_type='Feature Film', genre='Action & Adventure', runtime=147, mpaa_rating='PG-13', imdb_num_votes=248046, best_dir_win='no')
+
+predict(fit, captain_america, interval="confidence")
+
+```
+
+The model predicts the imdb rating to be 6.517946, but the actual value is 8.2. The 95% confidence intervals are 6.23 to 6.80, meaning we are 95% confident that this interval will capture the true value of imdb rating.
+
+
+* * *
+
+## Part 6: Conclusion
+
+In conclusion, we are not able to make proper predictions for imdb rating using the given dataset, this is because the conditions for multiple linear regression are not met. Even if the conditions were all met, the model could still explain only less than half of the variability in the response variable. Clearly, we are missing some hidden explanatory variables, for example, the budget for the movie, the production duration etc. 
+
+In this project, we did not use critics and audience ratings from Rotten Tomatoes since these are also popularity measures and using one to predict another simply wouldn't have any realistic value. But if we did, we definitely could have gotten a much better prediction.

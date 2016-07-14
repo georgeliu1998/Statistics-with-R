@@ -1,0 +1,12 @@
+# Duke University Statistics with R Specialization
+
+This repo contains deliverables of the Statistics with R Specialization offered by Duke University on Coursera.
+
+## Requirements
+You need R and RStudio to run the file, plus the following packages installed:
+- dplyr
+- ggplot2
+- statsr
+
+## License
+The program is released under a MIT license.

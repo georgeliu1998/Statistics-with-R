@@ -1,0 +1,139 @@
+---
+title: "Statistical inference with the GSS data"
+author: George Liu
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Overview
+The [General Social Survey (GSS)](http://gss.norc.org/) is full-probability, personal-interview survey that is aimed at understaning the United States society in terms of demographics, attitudes and behaviors. It's been a premium source of data for social studies for four decades. In this project, we'll use the GSS data set to study the difference in different age groups' opinion on sexual relationships. In particular, we'll focus on the 2012 data.
+
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+```{r load-data}
+load("gss.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+Since the data was gathered using "full probability sampling" - a random sampling technique, we can generalize our findings from the sample to the U.S. population. On ther other hand, we cannot make any causal inference as no random assignment of subjects to control/experiment groups is involved. 
+
+
+* * *
+
+## Part 2: Research question
+
+For this project, we'll focus on the research question of "is attitude towards sexual relationship independent of age groups?". Specifically, we want to investigate the attitude on sex with person other than spouse for the 30-year-old and younger and 60-year-old and older age groups. 
+
+This is an interesting question to investigate as the result can shed light on the evolution of social attitude towards sex. A general understanding of this question will provide insight for the potential difference between older and yonger people and facilitate understanding and communication between them.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+Let's start by narrowing the data set to our target groups.
+
+```{r}
+data <- gss %>%
+  select(age, xmarsex)
+# Now take a look at the data
+dim(data)
+head(data)
+str(data)
+# Find out the percent of valid data
+sum(complete.cases(data))/nrow(data)
+```
+
+So, the missing values are about 40% of the sample which is really high. Given this, the result could be biased as a result of "convenience sampling". To continue with the project, let's assume these data are missing due to reasons other than having a very strong attitude.
+
+Next, we pick the target age groups. 
+
+```{r}
+data <- data[complete.cases(data),]
+yonger.index <- data$age <= 30
+older.index <- data$age >= 60
+data <- data[yonger.index | older.index,]
+
+```
+
+We then create a new variable identifying group membership:
+
+```{r}
+data <- data %>%
+  mutate(group = ifelse(age<=30, "yonger", "older"))
+# A sanity check to make sure the two groups are equally represented:
+sum(data$group=="yonger")/nrow(data)
+```
+
+Now that the sanity check passed, we find the respective counts for both groups and visualize the result.
+
+```{r fig.width=8, fig.height=7}
+tbl <- table(data$group, data$xmarsex) 
+tbl
+# Since the "Other" level is unused, we drop it to avoid problems in chi-square test later.
+data$xmarsex <- droplevels(data$xmarsex)
+tbl <- table(data$group, data$xmarsex)
+mosaicplot(tbl, 
+           main = "Attitude towards sex of older and yonger age groups", 
+           color = T,
+           las = 1)
+```
+
+So, clearly the proportion of people responding "Always Wrong" is much higher in older age group compared with the yonger group. The proportion of "Almost always wrong" and "sometimes wrong" in the yonger group is higher than that of the older group, indicating yonger people are more open to sex relationship outside of marriage. Thus it does appear that people's attitude towards sexual relation is not independent of age. Below, we'll use statistical inference techniques to verify this finding.
+
+
+* * *
+
+## Part 4: Inference
+
+### State hypotheses
+Our hypothesis is that people's attitude towards sex with people other than spouse is independent from age.
+
+- H0: Age groups and attitude towards sex are independent, attitude doesn't vary by age groups.
+- HA: Age groups and attitude towards sex are dependent, attitude does vary by age groups
+
+### Check conditions
+To use the CLT based proportion comparing method, we need to make sure the conditions are met:
+
+1. Independence:
+Since the sampling method was full probability sampling, the individual samples are independent of each other, also the sample is less than 10% of the U.S. population. Because there is no double counting, each case only contributes to one cell in the table.
+
+2. Sample Size / Skew:
+Each particular scenario has more than 5 expected cases.
+
+Therefore, the conditions are met for Chi-Square Test.
+
+### Methods
+As we have two categorical variables with more than two levels, Chi-Square Test of Independence is the appropriate method for inference about the two variables relationship.
+
+### Perform inference
+
+We now conduct the Chi-Square Test of Independence:
+
+```{r}
+chisq.test(tbl)
+```
+
+As we don't have associated confidence intervals with Chi-Square Test of Independence, p-value is the only result to be reported.
+
+### Interpret results
+
+As we can see from the result, the p-value is 2.2e-16 which is almost zero. Therefore, we reject the null hypothesis and conclude that for the U.S. population, the data provides convincing evidence that people's views on sex outside of marriage do vary by age, that is, there is relationship between people's age (older and yonger groups in particular) and whether they think sex outside of marriage is wrong. This is in line with our initial intuition based on exploratory data analysis.
+

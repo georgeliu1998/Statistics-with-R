@@ -1,0 +1,170 @@
+---
+title: "Exploring the BRFSS data"
+author: George Liu
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Overview
+In this project, we conduct Exploratory Data Analysis (EDA) using the The Behavioral Risk Factor Surveillance System (BRFSS) 2013 dataset. According to the [official site](http://www.cdc.gov/brfss/data_documentation/index.htm), "BRFSS is an ongoing surveillance system designed to measure behavioral risk factors for the non-institutionalized adult population (18 years of age and older) residing in the US. The BRFSS objective is to collect uniform, state-specific data on preventive health practices and risk behaviors that are linked to chronic diseases, injuries, and preventable infectious diseases that affect the adult population."
+
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+### Load data
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+According to [BRFSS](http://www.cdc.gov/brfss/annual_data/2013/pdf/Overview_2013.pdf), the data was collected using disproportionate stratified sample and simple random sample methods. Since they are all random sampling techniques, any analysis result we get from this sample can be generalized to the general population, in this case, the United States aldult population. On the other hand, since random assignment is not involved, we cannot draw any causal conclusions.
+
+
+
+* * *
+
+## Part 2: Research questions
+
+We have the following three questions to investigate using the data. The first two questions are interesting as they can be informative for people who care about their health. The third question is useful to government agencies or non profit organizations as they can use it to target certain groups for education and prevention purposes. 
+
+**Research quesion 1:**
+Is amount of sleep correlated with health? More specifically, do people who sleep less have a higher probability of being diagnosed for heart attack? 
+
+**Research quesion 2:**
+Is there relationship between smoking, drikining and health? Do people who smoke/drink generally have worse health?
+
+**Research quesion 3:**
+Are seatbelt usage rates connected with education? Do people with more education tend to use seatbelt more?
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+**Research quesion 1:**
+
+Let's start by examining the relationship between health and sleep time:
+
+```{r}
+sleep_time <- brfss2013 %>%
+  select(genhlth, sleptim1) %>%
+  filter(!is.na(genhlth) & !is.na(sleptim1)) 
+
+ggplot(data=sleep_time, aes(x=genhlth, y=sleptim1)) +
+  geom_boxplot() 
+```
+
+There seems to be a trend in sleep time across different health groups. In particular the "Poor" health group has clearly lower median sleep time than other groups. Next, we calculate the mean sleep time for different groups.
+
+```{r}
+sleep_avg <- sleep_time %>%
+  group_by(genhlth) %>%
+  summarise(avg=mean(sleptim1)) 
+
+ggplot(data=sleep_avg, aes(x=genhlth, y=avg)) +
+  geom_bar(stat = "identity") 
+```
+
+So, it's clear the average sleep time decreases from "Excellent" to "Poor" health group. Let's also check the relationship between sleep and heart attack diagnosis.
+
+```{r}
+# Create a new variable indicating whether a subject has enough sleep or not
+brfss2013 <- brfss2013 %>%
+  mutate(enough_sleep=ifelse(sleptim1>=7, 'yes', 'no'))
+
+brfss2013 %>%
+  select(enough_sleep, cvdinfr4) %>%
+  filter(!is.na(enough_sleep) & !is.na(cvdinfr4)) %>%
+  group_by(enough_sleep, cvdinfr4) %>%
+  summarize(count=n()) %>%
+  mutate(percentage=count/sum(count))
+```
+
+We can see that the percentage of heart attack is higher in the not enough sleep group. Therefore, there is a correlation between health and sleep time - with better health corresponding to more sleep.
+
+**Research quesion 2:**
+
+We now look at the relationship between smoking and health by checking out the distribution of health statuses in both smoking and non-smoking groups.
+
+```{r}
+smoke <- brfss2013 %>%
+  select(smoke100, genhlth) %>%
+  filter(!is.na(smoke100) & !is.na(genhlth)) %>%
+  group_by(smoke100, genhlth) %>%
+  arrange(smoke100, genhlth)
+
+ggplot(data=smoke, aes(x=genhlth)) +
+  geom_bar() +
+  facet_wrap(~smoke100)
+```
+
+So the visualization indicates that for the non-smoking group, the proportion of good to excellent health people is significantly higher than that of the smoking group. Let's quantify this using summary stats:
+
+```{r}
+smoke %>%
+  summarise(count=n()) %>%
+  mutate(proportion=count/sum(count))
+```
+
+The data does support previous observation. With the non-smoking group, the proportions of excellent and very good health are 35% and 21%, compared with the smoking group's 13% and 30%. 
+
+Next, let's check the relationship between drinking, smoking and health. We'll do this by adding a new variable drink_smoke - "yes" whenever the subject both drink and smoke. Also, we'll split health into two groups: good or not.
+
+```{r}
+brfss2013 %>%
+  mutate(drink_smoke = ifelse(smoke100=='Yes' & alcday5>0, 'yes', 'no')) %>%
+  mutate(healthy = ifelse(genhlth== c('Fair', 'Poor'), 'bad', 'yes')) %>%
+  group_by(drink_smoke, healthy) %>%
+  summarise(count=n()) %>%
+  mutate(proportion=count/sum(count))
+  
+```
+
+The result is a bit weird since the drink smoke group has a higher percentage of healthy people. This is likely caused by the extremely large number of NA's in the drink_smoke variable.
+
+
+**Research quesion 3:**
+
+We start investigating question 3 by converting the levels of the factor variable to shorter texts for better disply in plot later. Then we'll make a mosaic plot showing the relationship between seatbelt use and education.
+
+```{r}
+brfss2013$educa <- plyr::mapvalues(brfss2013$educa,
+                                   from=c("Never attended school or only kindergarten",
+                                          "Grades 1 through 8 (Elementary)", 
+                                          "Grades 9 though 11 (Some high school)",
+                                          "Grade 12 or GED (High school graduate)", 
+                                          "College 1 year to 3 years (Some college or technical school)", 
+                                          "College 4 years or more (College graduate)"),
+                                   to=c('none', 
+                                        'elementary',
+                                        'some high school', 
+                                        'high school', 
+                                        'Some college', 
+                                        'College'))
+
+educ_seatbelt <- brfss2013 %>%
+  select(educa, seatbelt) %>%
+  filter(!is.na(educa) & !is.na(seatbelt)) %>%
+  group_by(educa, seatbelt) %>%
+  arrange(educa, seatbelt)
+
+tbl <- table(educ_seatbelt)
+mosaicplot(tbl)
+```
+
+So it's clear that the proportion of people who always use seatbelt increases with the amount of eduction received. 
